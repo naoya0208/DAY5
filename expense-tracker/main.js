@@ -289,10 +289,18 @@ class CloudSync {
         });
 
         if (!response.ok) {
-            throw new Error('アップロードに失敗しました');
+            const errorText = await response.text();
+            console.error('Upload error response:', errorText);
+            throw new Error(`アップロード失敗 (${response.status})`);
         }
 
-        return await response.json();
+        try {
+            return await response.json();
+        } catch (e) {
+            const text = await response.text();
+            console.error('Invalid JSON response:', text);
+            throw new Error('GASからの応答が正しくありません。デプロイ設定を確認してください。');
+        }
     }
 
     // 支出データをダウンロード
@@ -313,10 +321,18 @@ class CloudSync {
         });
 
         if (!response.ok) {
-            throw new Error('ダウンロードに失敗しました');
+            const errorText = await response.text();
+            console.error('Download error response:', errorText);
+            throw new Error(`ダウンロード失敗 (${response.status})`);
         }
 
-        return await response.json();
+        try {
+            return await response.json();
+        } catch (e) {
+            const text = await response.text();
+            console.error('Invalid JSON response:', text);
+            throw new Error('GASからの応答が正しくありません。');
+        }
     }
 
     // 支出データを同期（マージ）
@@ -338,10 +354,18 @@ class CloudSync {
         });
 
         if (!response.ok) {
-            throw new Error('同期に失敗しました');
+            const errorText = await response.text();
+            console.error('Sync error response:', errorText);
+            throw new Error(`同期失敗 (${response.status})`);
         }
 
-        return await response.json();
+        try {
+            return await response.json();
+        } catch (e) {
+            const text = await response.text();
+            console.error('Invalid JSON response:', text);
+            throw new Error('GASからの応答が正しくありません。');
+        }
     }
 }
 

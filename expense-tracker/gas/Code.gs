@@ -25,10 +25,21 @@ function doGet(e) {
  * フロントエンドからのリクエストを処理
  */
 function doPost(e) {
+  const lock = LockService.getScriptLock();
   try {
+    // 同時実行による不整合を防ぐためロック取得（最大30秒待機）
+    lock.waitLock(30000);
+    
+    // 内容が空でないか確認
+    if (!e || !e.postData || !e.postData.contents) {
+      throw new Error('リクエストデータが空です');
+    }
+
     // リクエストボディをパース
     const params = JSON.parse(e.postData.contents);
     const action = params.action;
+    
+    console.log('Action received:', action); // GASログに出力
     
     // シートを取得または作成
     const sheet = getOrCreateSheet();
@@ -46,18 +57,22 @@ function doPost(e) {
         result = syncExpenses(sheet, params.data);
         break;
       default:
-        throw new Error('Unknown action: ' + action);
+        throw new Error('不明なアクション: ' + action);
     }
     
     return ContentService.createTextOutput(JSON.stringify(result))
       .setMimeType(ContentService.MimeType.JSON);
       
   } catch (error) {
+    console.error('Error occurred:', error.message); // GASログに出力
     return ContentService.createTextOutput(JSON.stringify({
       success: false,
-      message: 'Error: ' + error.message,
+      message: error.message,
       data: []
     })).setMimeType(ContentService.MimeType.JSON);
+    
+  } finally {
+    lock.releaseLock();
   }
 }
 
