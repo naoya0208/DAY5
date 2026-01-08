@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
+    base: '/-DAY5/',
     plugins: [
         react(),
         VitePWA({
@@ -35,5 +36,9 @@ export default defineConfig({
                 ]
             }
         })
-    ]
+    ],
+    build: {
+        outDir: '../docs',
+        emptyOutDir: true
+    }
 })
