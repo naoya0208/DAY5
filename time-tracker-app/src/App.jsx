@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Coffee, CheckCircle, LogOut, Play, Settings, User, Fingerprint, ExternalLink, Clock } from 'lucide-react';
+import { Coffee, CheckCircle, LogOut, Play, Settings, User, Clock, Bell } from 'lucide-react';
 
+// 注意: このURLはGASをデプロイした後に更新する必要があります
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbz2EKqIwUtc9aFRePxQoDj5UELzcIxJC_Z6CI_vlRpa3cnP26IvrLRaEjY29ExRUUj-/exec';
 
 function App() {
@@ -8,6 +9,7 @@ function App() {
     const [currentTime, setCurrentTime] = useState(new Date());
     const [loading, setLoading] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
+    const [notification, setNotification] = useState({ show: false, message: '' });
 
     const [userInfo, setUserInfo] = useState(() => {
         const saved = localStorage.getItem('user_info');
@@ -25,12 +27,9 @@ function App() {
         localStorage.setItem('tracker_status', status);
     }, [status]);
 
-    const formatTime = (date) => {
-        return date.toLocaleTimeString('ja-JP', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    };
-
-    const formatDate = (date) => {
-        return date.toLocaleDateString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short' });
+    const showToast = (message) => {
+        setNotification({ show: true, message });
+        setTimeout(() => setNotification({ show: false, message: '' }), 3000);
     };
 
     const handleAction = async (type, extraData = {}) => {
@@ -54,20 +53,28 @@ function App() {
                 }),
             });
 
-            if (type === 'clock-in') setStatus('working');
-            if (type === 'clock-out') setStatus('idle');
-            if (type === 'break-start') setStatus('break');
-            if (type === 'break-end') setStatus('working');
-
-            // Feedback: simple alert for now, can be improved to a toast
-            if (type !== 'assignment') {
-                // Success animation or something
-            } else {
-                alert('報告が完了しました');
+            if (type === 'clock-in') {
+                setStatus('working');
+                showToast('出勤を記録しました');
+            }
+            if (type === 'clock-out') {
+                setStatus('idle');
+                showToast('退勤を記録しました');
+            }
+            if (type === 'break-start') {
+                setStatus('break');
+                showToast('休憩を開始しました');
+            }
+            if (type === 'break-end') {
+                setStatus('working');
+                showToast('休憩を終了しました');
+            }
+            if (type === 'assignment') {
+                showToast('課題完了を報告しました');
             }
         } catch (error) {
             console.error('Error:', error);
-            alert('接続エラーが発生しました。インターネット接続を確認してください。');
+            alert('エラーが発生しました。インターネット接続を確認してください。');
         } finally {
             setLoading(false);
         }
@@ -77,115 +84,114 @@ function App() {
         setUserInfo(tempUserInfo);
         localStorage.setItem('user_info', JSON.stringify(tempUserInfo));
         setShowSettings(false);
-    };
-
-    const handleReport = () => {
-        const url = prompt('提出するアプリや課題のURLを入力してください（任意）', '');
-        handleAction('assignment', { appUrl: url || window.location.href });
+        showToast('設定を保存しました');
     };
 
     return (
         <div className="container">
+            {/* Toast Notification */}
+            <div className={`toast ${notification.show ? 'show' : ''}`}>
+                <Bell size={18} />
+                {notification.message}
+            </div>
+
             <div className="glass-card">
-                <div className="status-badge-container">
-                    <div className={`status-badge status-${status}`}>
-                        {status === 'idle' && <><Clock size={16} /> 未出勤</>}
-                        {status === 'working' && <><Fingerprint size={16} /> 勤務中</>}
-                        {status === 'break' && <><Coffee size={16} /> 休憩中</>}
+                <div className="header">
+                    <div className="user-profile" onClick={() => setShowSettings(true)}>
+                        <div className="avatar">
+                            <User size={20} />
+                        </div>
+                        <div className="user-details">
+                            <span className="user-name">{userInfo.name}</span>
+                            <span className="user-id">ID: {userInfo.id}</span>
+                        </div>
+                        <Settings className="settings-icon" size={18} />
                     </div>
                 </div>
 
-                <div className="time-display">{formatTime(currentTime)}</div>
-                <div className="date-display">{formatDate(currentTime)}</div>
+                <div className={`status-display status-${status}`}>
+                    <div className="status-label">
+                        {status === 'idle' && '未出勤'}
+                        {status === 'working' && '勤務中'}
+                        {status === 'break' && '休憩中'}
+                    </div>
+                    <div className="time-display">{currentTime.toLocaleTimeString('ja-JP', { hour12: false })}</div>
+                    <div className="date-display">{currentTime.toLocaleDateString('ja-JP', { weekday: 'short', month: 'long', day: 'numeric' })}</div>
+                </div>
 
-                <div className="main-action">
+                <div className="main-actions">
                     {status === 'idle' ? (
                         <button
-                            className="punch-button"
+                            className="action-btn btn-clock-in"
                             onClick={() => handleAction('clock-in')}
                             disabled={loading}
                         >
-                            {loading ? <div className="loader"></div> : <><Play size={48} fill="currentColor" /><span>出勤</span></>}
+                            <div className="btn-icon"><Play size={32} fill="currentColor" /></div>
+                            <span>出勤打刻</span>
                         </button>
                     ) : (
                         <button
-                            className="punch-button out"
+                            className="action-btn btn-clock-out"
                             onClick={() => handleAction('clock-out')}
                             disabled={loading}
                         >
-                            {loading ? <div className="loader"></div> : <><LogOut size={48} /><span>退勤</span></>}
+                            <div className="btn-icon"><LogOut size={32} /></div>
+                            <span>退勤打刻</span>
                         </button>
                     )}
                 </div>
 
-                <div className="secondary-grid">
+                <div className="secondary-actions">
                     <button
-                        className="btn-secondary"
+                        className={`btn-sub ${status === 'break' ? 'active' : ''}`}
                         onClick={() => handleAction(status === 'break' ? 'break-end' : 'break-start')}
                         disabled={loading || status === 'idle'}
                     >
-                        <Coffee size={20} />
-                        {status === 'break' ? '休憩終了' : '休憩開始'}
+                        <Coffee size={24} />
+                        <span>{status === 'break' ? '休憩終了' : '休憩開始'}</span>
                     </button>
 
                     <button
-                        className="btn-secondary"
-                        onClick={handleReport}
+                        className="btn-sub btn-assignment"
+                        onClick={() => {
+                            if (window.confirm('「課題完了ボタン」を押すと管理者に通知が届きます。よろしいですか？')) {
+                                handleAction('assignment');
+                            }
+                        }}
                         disabled={loading}
                     >
-                        <CheckCircle size={20} />
-                        課題報告
-                    </button>
-
-                    <button
-                        className="btn-secondary btn-report"
-                        onClick={() => handleAction('assignment')}
-                        disabled={loading}
-                    >
-                        <ExternalLink size={20} />
-                        管理者へ報告
-                    </button>
-                </div>
-
-                <div className="user-info">
-                    <User size={14} />
-                    <span>{userInfo.name} ({userInfo.id})</span>
-                    <button className="settings-trigger" onClick={() => setShowSettings(true)}>
-                        <Settings size={14} />
+                        <CheckCircle size={24} />
+                        <span>課題完了</span>
                     </button>
                 </div>
             </div>
 
             {showSettings && (
                 <div className="modal-overlay">
-                    <div className="modal-content">
-                        <h2>ユーザー設定</h2>
-                        <div className="input-group">
+                    <div className="modal-content glass-effect">
+                        <h3>ユーザー設定</h3>
+                        <div className="input-field">
                             <label>研修生ID</label>
                             <input
                                 type="text"
                                 value={tempUserInfo.id}
                                 onChange={(e) => setTempUserInfo({ ...tempUserInfo, id: e.target.value })}
-                                placeholder="例: T001"
+                                placeholder="T001"
                             />
                         </div>
-                        <div className="input-group">
+                        <div className="input-field">
                             <label>氏名</label>
                             <input
                                 type="text"
                                 value={tempUserInfo.name}
                                 onChange={(e) => setTempUserInfo({ ...tempUserInfo, name: e.target.value })}
-                                placeholder="例: 山田 太郎"
+                                placeholder="山田 太郎"
                             />
                         </div>
-                        <button className="btn-primary" onClick={saveSettings}>保存する</button>
-                        <button
-                            className="btn-secondary"
-                            style={{ marginTop: '0.5rem', width: '100%' }}
-                            onClick={() => setShowSettings(false)}
-                        >
-                            キャンセル
-                        </button>
+                        <div className="modal-footer">
+                            <button className="btn-cancel" onClick={() => setShowSettings(false)}>キャンセル</button>
+                            <button className="btn-save" onClick={saveSettings}>保存</button>
+                        </div>
                     </div>
                 </div>
             )}
