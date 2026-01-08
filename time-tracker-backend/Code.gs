@@ -1,10 +1,5 @@
 /**
  * Clock-in App Backend (GAS)
- * 
- * Properties:
- * - SPREADSHEET_ID: 1sh42sVYw-QAaObKc3I5hOLjjQpX2FXJfaK5TCDjo9gs
- * - LINE_CHANNEL_ACCESS_TOKEN: YOZ7UftinQa...
- * - LINE_GROUP_ID: C5a5b36e27a78ed6cfbb74839a8a9d04e
  */
 
 const SPREADSHEET_ID = '1MOzxb7RKuxVMHQI7djPIu2iw6Hf3GLeg71_9oQi6FS8';
@@ -12,29 +7,36 @@ const LINE_ACCESS_TOKEN = 'YOZ7UftinQaO3OyBDaloYu4cXzhYtLzmqBzAGNvCIJRg7h+DoqsX0
 const LINE_GROUP_ID = 'C5a5b36e27a78ed6cfbb74839a8a9d04e';
 
 function doPost(e) {
-  const data = JSON.parse(e.postData.contents);
-  const { type, traineeId, name, appUrl } = data;
-  
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const now = new Date();
-  const dateStr = Utilities.formatDate(now, 'JST', 'yyyy/MM/dd');
-  const timeStr = Utilities.formatDate(now, 'JST', 'HH:mm');
-  const dateTimeStr = Utilities.formatDate(now, 'JST', 'yyyy/MM/dd HH:mm');
+  try {
+    const data = JSON.parse(e.postData.contents);
+    const { type, traineeId, name, appUrl } = data;
+    
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const now = new Date();
+    const dateStr = Utilities.formatDate(now, 'JST', 'yyyy/MM/dd');
+    const timeStr = Utilities.formatDate(now, 'JST', 'HH:mm');
+    const dateTimeStr = Utilities.formatDate(now, 'JST', 'yyyy/MM/dd HH:mm');
 
-  if (type === 'clock-in') {
-    handleClockIn(ss, traineeId, name, dateStr, timeStr, dateTimeStr);
-  } else if (type === 'clock-out') {
-    handleClockOut(ss, traineeId, name, dateStr, timeStr);
-  } else if (type === 'break-start') {
-    handleBreak(ss, traineeId, name, dateStr, timeStr, 'start');
-  } else if (type === 'break-end') {
-    handleBreak(ss, traineeId, name, dateStr, timeStr, 'end');
-  } else if (type === 'assignment') {
-    handleAssignment(ss, traineeId, name, dateTimeStr, appUrl);
+    let result = { status: 'success' };
+
+    if (type === 'clock-in') {
+      handleClockIn(ss, traineeId, name, dateStr, timeStr, dateTimeStr);
+    } else if (type === 'clock-out') {
+      handleClockOut(ss, traineeId, name, dateStr, timeStr);
+    } else if (type === 'break-start') {
+      handleBreak(ss, traineeId, name, dateStr, timeStr, 'start');
+    } else if (type === 'break-end') {
+      handleBreak(ss, traineeId, name, dateStr, timeStr, 'end');
+    } else if (type === 'assignment') {
+      handleAssignment(ss, traineeId, name, dateTimeStr, appUrl);
+    }
+
+    return ContentService.createTextOutput(JSON.stringify(result))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: err.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
   }
-
-  return ContentService.createTextOutput(JSON.stringify({ status: 'success' }))
-    .setMimeType(ContentService.MimeType.JSON);
 }
 
 function handleClockIn(ss, traineeId, name, dateStr, timeStr, dateTimeStr) {
@@ -50,22 +52,28 @@ function handleClockOut(ss, traineeId, name, dateStr, timeStr) {
   const data = sheet.getDataRange().getValues();
   let rowIdx = -1;
   
-  // Find today's record for this trainee
+  // Find today's record for this trainee (latest)
   for (let i = data.length - 1; i >= 1; i--) {
-    if (data[i][0] instanceof Date) {
-      const d = Utilities.formatDate(data[i][0], 'JST', 'yyyy/MM/dd');
-      if (d === dateStr && data[i][1] === traineeId) {
-        rowIdx = i + 1;
-        break;
-      }
+    let rowDate = data[i][0];
+    if (rowDate instanceof Date) {
+      rowDate = Utilities.formatDate(rowDate, 'JST', 'yyyy/MM/dd');
+    }
+    if (rowDate === dateStr && data[i][1] === traineeId) {
+      rowIdx = i + 1;
+      break;
     }
   }
 
   if (rowIdx !== -1) {
+    const rowData = data[rowIdx-1];
+    const clockInTimeStr = rowData[3];
+    const breakStartStr = rowData[4];
+    const breakEndStr = rowData[5];
+
     sheet.getRange(rowIdx, 7).setValue(timeStr);
-    const clockInTimeStr = data[rowIdx-1][3];
-    // Calculate working time (Simple diff for now)
-    const workTime = calculateWorkTime(clockInTimeStr, timeStr);
+    
+    // Calculate working time
+    const workTime = calculateNetWorkTime(clockInTimeStr, timeStr, breakStartStr, breakEndStr);
     sheet.getRange(rowIdx, 8).setValue(workTime);
 
     const message = `【退勤】\n${name}\n出勤：${clockInTimeStr}\n退勤：${timeStr}\n勤務：${workTime}`;
@@ -79,7 +87,11 @@ function handleBreak(ss, traineeId, name, dateStr, timeStr, phase) {
   let rowIdx = -1;
   
   for (let i = data.length - 1; i >= 1; i--) {
-    if (data[i][1] === traineeId) {
+     let rowDate = data[i][0];
+    if (rowDate instanceof Date) {
+      rowDate = Utilities.formatDate(rowDate, 'JST', 'yyyy/MM/dd');
+    }
+    if (rowDate === dateStr && data[i][1] === traineeId) {
       rowIdx = i + 1;
       break;
     }
@@ -116,21 +128,41 @@ function sendLineMessage(text) {
   });
 }
 
-function calculateWorkTime(startStr, endStr) {
+function calculateNetWorkTime(startStr, endStr, bStartStr, bEndStr) {
   const start = parseTime(startStr);
   const end = parseTime(endStr);
-  let diffMs = end - start;
-  if (diffMs < 0) diffMs += 24 * 60 * 60 * 1000;
+  let totalDiffMs = end - start;
+  if (totalDiffMs < 0) totalDiffMs += 24 * 60 * 60 * 1000;
+
+  let breakMs = 0;
+  if (bStartStr && bEndStr) {
+    const bStart = parseTime(bStartStr);
+    const bEnd = parseTime(bEndStr);
+    breakMs = bEnd - bStart;
+    if (breakMs < 0) breakMs += 24 * 60 * 60 * 1000;
+  }
   
-  const totalMin = Math.floor(diffMs / 60000);
-  const hours = Math.floor(totalMin / 60);
-  const mins = totalMin % 60;
-  return `${hours}時間${mins}分`;
+  const netMin = Math.floor((totalDiffMs - breakMs) / 60000);
+  const hours = Math.floor(netMin / 60);
+  const mins = netMin % 60;
+  
+  if (hours > 0) {
+    return `${hours}時間${mins}分`;
+  } else {
+    return `${mins}分`;
+  }
 }
 
 function parseTime(tStr) {
+  if (!tStr) return 0;
+  // If tStr is already a Date object (sometimes GAS retrieves it as such)
+  if (tStr instanceof Date) {
+    const d = new Date();
+    d.setHours(tStr.getHours(), tStr.getMinutes(), 0, 0);
+    return d.getTime();
+  }
   const parts = tStr.split(':');
   const d = new Date();
-  d.setHours(parts[0], parts[1], 0, 0);
+  d.setHours(parseInt(parts[0], 10), parseInt(parts[1], 10), 0, 0);
   return d.getTime();
 }
