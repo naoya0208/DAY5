@@ -27,10 +27,22 @@ function App() {
     const handleAction = async (type) => {
         setLoading(true);
         try {
-            // In a real scenario, we would use fetch to the GAS Web App URL
-            console.log(`Sending ${type} to GAS...`);
-            // Simulating API call
-            await new Promise(resolve => setTimeout(resolve, 800));
+            const response = await fetch(GAS_URL, {
+                method: 'POST',
+                mode: 'no-cors', // GAS typically requires no-cors for simple posts
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    type,
+                    traineeId: TRAINEE_ID,
+                    name: USER_NAME,
+                    appUrl: APP_URL
+                }),
+            });
+
+            // Since mode is 'no-cors', we won't get a readable response body, 
+            // but we can assume success if no error is thrown by fetch.
 
             if (type === 'clock-in') setStatus('working');
             if (type === 'clock-out') setStatus('idle');
@@ -39,6 +51,7 @@ function App() {
 
             alert(`${type} 完了しました`);
         } catch (error) {
+            console.error('Error:', error);
             alert('エラーが発生しました');
         } finally {
             setLoading(false);
